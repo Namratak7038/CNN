@@ -5,9 +5,9 @@ from PIL import Image
 import torch.nn as nn
 import os
 
-# -----------------------------
-# Define CNN Model
-# -----------------------------
+# ----------------------------
+# Model Definition
+# ----------------------------
 class SimpleCNN(nn.Module):
     def __init__(self, num_classes=4):
         super(SimpleCNN, self).__init__()
@@ -15,11 +15,11 @@ class SimpleCNN(nn.Module):
         self.features = nn.Sequential(
             nn.Conv2d(3, 16, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.MaxPool2d(2, 2),
 
             nn.Conv2d(16, 32, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
+            nn.MaxPool2d(2, 2)
         )
 
         self.classifier = nn.Sequential(
@@ -36,58 +36,54 @@ class SimpleCNN(nn.Module):
         return x
 
 
-# -----------------------------
-# Load Model
-# -----------------------------
 MODEL_PATH = "quantized_simple_cnn_model.pth"
+
 
 @st.cache_resource
 def load_model():
+    if not os.path.exists(MODEL_PATH):
+        st.error(f"Model file '{MODEL_PATH}' not found.")
+        st.stop()
+
     model = SimpleCNN(num_classes=4)
 
-    state_dict = torch.load(
-        MODEL_PATH,
-        map_location=torch.device("cpu")
-    )
+    try:
+        checkpoint = torch.load(MODEL_PATH, map_location="cpu")
 
-    model.load_state_dict(state_dict)
-    model.eval()
+        # If it is a state_dict
+        if isinstance(checkpoint, dict):
+            if "state_dict" in checkpoint:
+                model.load_state_dict(checkpoint["state_dict"])
+            else:
+                model.load_state_dict(checkpoint)
 
-    return model
+            model.eval()
+            return model
 
+        # If it is an entire saved model
+        else:
+            checkpoint.eval()
+            return checkpoint
 
-# -----------------------------
-# Streamlit UI
-# -----------------------------
-st.set_page_config(
-    page_title="Image Classification",
-    page_icon="🖼️",
-    layout="centered"
-)
+    except Exception as e:
+        st.error("Model loading failed!")
+        st.code(str(e))
+        st.stop()
 
-st.title("🖼️ Furniture Image Classification")
-st.write("Upload an image to classify it.")
-
-if not os.path.exists(MODEL_PATH):
-    st.error(f"Model file '{MODEL_PATH}' not found!")
-    st.stop()
 
 model = load_model()
 
+st.title("Furniture Image Classification")
+
 uploaded_file = st.file_uploader(
-    "Choose an image",
+    "Upload an image",
     type=["jpg", "jpeg", "png"]
 )
 
-if uploaded_file is not None:
+if uploaded_file:
 
     image = Image.open(uploaded_file).convert("RGB")
-
-    st.image(
-        image,
-        caption="Uploaded Image",
-        use_container_width=True
-    )
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
     transform = transforms.Compose([
         transforms.Resize((250, 250)),
@@ -101,10 +97,8 @@ if uploaded_file is not None:
     input_tensor = transform(image).unsqueeze(0)
 
     with torch.no_grad():
-        outputs = model(input_tensor)
-
-        probabilities = torch.nn.functional.softmax(outputs, dim=1)
-
+        output = model(input_tensor)
+        probabilities = torch.softmax(output, dim=1)
         confidence, predicted = torch.max(probabilities, 1)
 
     classes = [
@@ -114,6 +108,5 @@ if uploaded_file is not None:
         "Table Images"
     ]
 
-    st.success(f"Prediction: **{classes[predicted.item()]}**")
-
-    st.info(f"Confidence: **{confidence.item() * 100:.2f}%**")
+    st.success(f"Prediction: {classes[predicted.item()]}")
+    st.write(f"Confidence: {confidence.item()*100:.2f}%")
