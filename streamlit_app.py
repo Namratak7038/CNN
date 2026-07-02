@@ -1,4 +1,10 @@
 import streamlit as st
+import torch
+import torch.nn as nn
+import torch.quantization
+import torchvision.transforms as transforms
+from PIL import Image
+import os
 @st.cache_resource
 def load_model():
 
